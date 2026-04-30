@@ -87,7 +87,7 @@ def init_db():
     cursor = conn.cursor()
     cursor.executescript("""
         PRAGMA foreign_keys = ON;
-        
+
         CREATE TABLE IF NOT EXISTS etudiants (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             matricule TEXT UNIQUE NOT NULL,
@@ -99,7 +99,7 @@ def init_db():
             age INTEGER,
             date_inscription TEXT
         );
-        
+
         CREATE TABLE IF NOT EXISTS notes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             etudiant_id INTEGER NOT NULL,
@@ -110,7 +110,7 @@ def init_db():
             annee_academique TEXT,
             FOREIGN KEY(etudiant_id) REFERENCES etudiants(id) ON DELETE CASCADE
         );
-        
+
         CREATE TABLE IF NOT EXISTS sessions_etude (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             etudiant_id INTEGER NOT NULL,
@@ -153,7 +153,7 @@ def seed_database():
     df_check = load_data("SELECT COUNT(*) as nb FROM etudiants")
     if not df_check.empty and df_check.iloc[0]['nb'] > 0:
         return  # Base déjà peuplée
-    
+
     with st.spinner("🎲 Génération de 25 étudiants fictifs et de leurs performances..."):
         # Préparer les données de base
         filieres = ["Informatique", "Mathématiques", "Physique", "Économie", "Droit"]
@@ -165,7 +165,7 @@ def seed_database():
             "Économie": ["Microéconomie", "Macroéconomie", "Économétrie", "Finance", "Comptabilité"],
             "Droit": ["Droit civil", "Droit pénal", "Droit des contrats", "Droit administratif", "Histoire du droit"]
         }
-        
+
         # Génération des étudiants
         etudiants = []
         if FAKER_AVAILABLE:
@@ -192,17 +192,17 @@ def seed_database():
                 age = random.randint(18, 30)
                 date_inscription = datetime.now().date().isoformat()
                 etudiants.append((matricule, nom, prenom, sexe, filiere, niveau, age, date_inscription))
-        
+
         for e in etudiants:
             execute_query("""
                 INSERT INTO etudiants (matricule, nom, prenom, sexe, filiere, niveau, age, date_inscription)
                 VALUES (?,?,?,?,?,?,?,?)
             """, e)
-        
+
         # Récupérer les IDs des étudiants
         df_ids = load_data("SELECT id, filiere FROM etudiants")
         ids_filieres = df_ids.to_dict('records')
-        
+
         # Générer des notes et sessions d'étude pour chaque étudiant
         for etud in ids_filieres:
             id_etud = etud['id']
@@ -218,7 +218,7 @@ def seed_database():
                     INSERT INTO notes (etudiant_id, matiere, note, coefficient, session, annee_academique)
                     VALUES (?,?,?,?,?,?)
                 """, (id_etud, mat, note, coeff, session, annee))
-            
+
             # Sessions d'étude (5 à 15 par étudiant)
             nb_sessions = random.randint(5, 15)
             for _ in range(nb_sessions):
@@ -230,7 +230,7 @@ def seed_database():
                     INSERT INTO sessions_etude (etudiant_id, date, heures_etude, heures_sommeil, humeur)
                     VALUES (?,?,?,?,?)
                 """, (id_etud, date, heures_etude, heures_sommeil, humeur))
-    
+
     st.success("✅ 25 étudiants fictifs ajoutés avec succès !")
     st.rerun()
 
@@ -267,12 +267,12 @@ st.sidebar.caption(f"Version 3.0 · {datetime.now().year}")
 if menu == "📊 Dashboard":
     st.title("📊 Tableau de bord stratégique")
     st.markdown("---")
-    
+
     # Chargement des données
     df_etud = load_data("SELECT * FROM etudiants")
     df_notes = load_data("SELECT * FROM notes")
     df_sessions = load_data("SELECT * FROM sessions_etude")
-    
+
     if df_etud.empty:
         st.info("Aucune donnée pour le moment. Utilisez l'onglet Administration pour ajouter des étudiants.")
     else:
@@ -281,7 +281,7 @@ if menu == "📊 Dashboard":
         taux_reussite = (df_notes["note"] >= 10).mean() * 100 if not df_notes.empty else 0
         nb_etudiants = len(df_etud)
         nb_notes = len(df_notes)
-        
+
         col1, col2, col3, col4 = st.columns(4)
         with col1:
             st.markdown("<div class='metric-card'>", unsafe_allow_html=True)
@@ -299,9 +299,9 @@ if menu == "📊 Dashboard":
             st.markdown("<div class='metric-card'>", unsafe_allow_html=True)
             st.metric("📝 Notes enregistrées", nb_notes)
             st.markdown("</div>", unsafe_allow_html=True)
-        
+
         st.markdown("---")
-        
+
         # Graphiques
         colA, colB = st.columns(2)
         with colA:
@@ -314,7 +314,7 @@ if menu == "📊 Dashboard":
                 st.plotly_chart(fig, use_container_width=True)
             else:
                 st.info("Aucune note disponible")
-        
+
         with colB:
             st.subheader("Répartition par filière")
             repartition = df_etud["filiere"].value_counts().reset_index()
@@ -323,7 +323,7 @@ if menu == "📊 Dashboard":
                          title="Étudiants par filière", hole=0.4,
                          color_discrete_sequence=px.colors.sequential.Blues_r)
             st.plotly_chart(fig, use_container_width=True)
-        
+
         # Évolution des notes moyennes par session (si plusieurs années)
         if not df_notes.empty and "session" in df_notes.columns:
             st.subheader("Performance par session")
@@ -331,7 +331,7 @@ if menu == "📊 Dashboard":
             fig = px.line(perf_session, x="session", y="note", markers=True,
                           title="Moyenne des notes par session", labels={"note": "Note moyenne"})
             st.plotly_chart(fig, use_container_width=True)
-        
+
         # Heatmap des corrélations (notes, heures d'étude, sommeil)
         if not df_sessions.empty and not df_notes.empty:
             st.subheader("📊 Corrélations (étude, sommeil, notes)")
@@ -348,7 +348,7 @@ if menu == "📊 Dashboard":
 elif menu == "👥 Étudiants":
     st.title("👥 Gestion des étudiants")
     tab_liste, tab_ajout = st.tabs(["📋 Liste des étudiants", "➕ Ajouter un étudiant"])
-    
+
     with tab_liste:
         st.subheader("Recherche")
         search = st.text_input("Rechercher par nom, prénom ou matricule")
@@ -365,7 +365,7 @@ elif menu == "👥 Étudiants":
                 st.rerun()
         else:
             st.info("Aucun étudiant enregistré.")
-    
+
     with tab_ajout:
         with st.form("add_student_form"):
             col1, col2 = st.columns(2)
@@ -401,7 +401,7 @@ elif menu == "👥 Étudiants":
 elif menu == "📝 Notes":
     st.title("📝 Gestion des notes")
     tab_saisie, tab_consult = st.tabs(["✏️ Saisie de notes", "📊 Consultation"])
-    
+
     with tab_saisie:
         df_etud = load_data("SELECT id, nom, prenom FROM etudiants")
         if df_etud.empty:
@@ -427,7 +427,7 @@ elif menu == "📝 Notes":
                             st.error("Erreur d'insertion")
                     else:
                         st.warning("Matière requise")
-    
+
     with tab_consult:
         df_notes = load_data("""
             SELECT e.nom, e.prenom, n.matiere, n.note, n.coefficient, n.session
@@ -445,7 +445,7 @@ elif menu == "📝 Notes":
 # ==========================================
 elif menu == "📈 Performances":
     st.title("📈 Analyse des performances")
-    
+
     df_notes = load_data("SELECT * FROM notes")
     df_etud = load_data("SELECT id, filiere, niveau FROM etudiants")
     if df_notes.empty or df_etud.empty:
@@ -459,7 +459,7 @@ elif menu == "📈 Performances":
                      title="Moyenne par filière", text="Moyenne",
                      color_continuous_scale="Blues")
         st.plotly_chart(fig, use_container_width=True)
-        
+
         # Top matières par filière (sélecteur)
         st.subheader("Performance par matière")
         filiere_choice = st.selectbox("Choisir une filière", merged["filiere"].unique())
@@ -468,7 +468,7 @@ elif menu == "📈 Performances":
         fig2 = px.bar(mat_perf, x="matiere", y="note", title=f"Matières les plus réussies - {filiere_choice}",
                       color="note", color_continuous_scale="Viridis")
         st.plotly_chart(fig2, use_container_width=True)
-        
+
         # Répartition des notes par niveau
         st.subheader("Notes par niveau")
         box = px.box(merged, x="niveau", y="note", color="niveau",
@@ -482,7 +482,7 @@ elif menu == "🔬 Analyses":
     st.title("🔬 Analyses avancées")
     df_notes = load_data("SELECT * FROM notes")
     df_sessions = load_data("SELECT * FROM sessions_etude")
-    
+
     if df_notes.empty or df_sessions.empty:
         st.info("Besoin de notes et de sessions d'étude pour les analyses.")
     else:
@@ -496,14 +496,14 @@ elif menu == "🔬 Analyses":
                              title="Heures d'étude vs Notes obtenues",
                              labels={"heures_etude": "Heures d'étude", "note": "Note /20"})
             st.plotly_chart(fig, use_container_width=True)
-            
+
             st.subheader("🛌 Impact du sommeil sur les performances")
             fig2 = px.scatter(merged, x="heures_sommeil", y="note", color="humeur",
                               trendline="lowess",
                               title="Sommeil et notes",
                               labels={"heures_sommeil": "Heures de sommeil", "note": "Note /20"})
             st.plotly_chart(fig2, use_container_width=True)
-            
+
             # Heatmap des corrélations détaillée
             st.subheader("📊 Matrice de corrélation complète")
             corr_data = merged[["note", "heures_etude", "heures_sommeil", "humeur", "coefficient"]].corr()
@@ -517,7 +517,7 @@ elif menu == "🔬 Analyses":
 elif menu == "⚙️ Administration":
     st.title("⚙️ Administration")
     st.markdown("Outils de gestion de la base de données.")
-    
+
     col1, col2 = st.columns(2)
     with col1:
         if st.button("🔄 Régénérer les données fictives (25 étudiants)"):
@@ -537,7 +537,7 @@ elif menu == "⚙️ Administration":
             st.session_state.seeded = False
             st.success("Base réinitialisée. Repeuplement...")
             st.rerun()
-    
+
     st.markdown("---")
     st.subheader("Statistiques de la base")
     df_et = load_data("SELECT COUNT(*) as nb FROM etudiants")
