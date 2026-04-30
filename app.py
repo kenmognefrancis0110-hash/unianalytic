@@ -1,38 +1,64 @@
+# ==========================================
+# app.py - Application complète améliorée
+# ==========================================
 import streamlit as st
 import sqlite3
 import pandas as pd
+import numpy as np
+import plotly.express as px
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+import matplotlib.pyplot as plt
+import seaborn as sns
 from datetime import datetime
 import os
+import io
 
 # ==========================================
 # CONFIGURATION DE LA PAGE
 # ==========================================
-st.set_page_config(page_title="UniAnalytics", page_icon="🎓", layout="wide")
+st.set_page_config(
+    page_title="UniAnalytics Pro",
+    page_icon="📊",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
-DB_PATH = "unianalytics_streamlit.db"
+# Style CSS personnalisé
+st.markdown("""
+    <style>
+    .main { background-color: #f8f9fa; }
+    .stButton>button { background-color: #1e3c72; color: white; border-radius: 8px; }
+    .stMetric { background-color: white; padding: 10px; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    </style>
+""", unsafe_allow_html=True)
+
+DB_PATH = "unianalytics_pro.db"
 
 # ==========================================
-# BASE DE DONNÉES
+# BASE DE DONNÉES (améliorée)
 # ==========================================
-def get_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
+def get_connection():
+    return sqlite3.connect(DB_PATH)
 
 def init_db():
-    conn = get_db()
+    conn = get_connection()
     conn.executescript("""
+        PRAGMA foreign_keys = ON;
+        
         CREATE TABLE IF NOT EXISTS etudiants (
             id_etudiant INTEGER PRIMARY KEY AUTOINCREMENT,
-            matricule TEXT UNIQUE,
+            matricule TEXT UNIQUE NOT NULL,
             nom TEXT NOT NULL,
             prenom TEXT NOT NULL,
             sexe TEXT DEFAULT 'M',
             filiere TEXT NOT NULL,
             niveau TEXT NOT NULL,
             age INTEGER NOT NULL,
-            annee_inscription INTEGER
+            annee_inscription INTEGER,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
+        
         CREATE TABLE IF NOT EXISTS sessions_etude (
             id_session INTEGER PRIMARY KEY AUTOINCREMENT,
             id_etudiant INTEGER REFERENCES etudiants(id_etudiant) ON DELETE CASCADE,
@@ -41,6 +67,7 @@ def init_db():
             heures_sommeil REAL NOT NULL,
             humeur_index INTEGER NOT NULL
         );
+        
         CREATE TABLE IF NOT EXISTS resultats (
             id_resultat INTEGER PRIMARY KEY AUTOINCREMENT,
             id_etudiant INTEGER REFERENCES etudiants(id_etudiant) ON DELETE CASCADE,
@@ -48,8 +75,10 @@ def init_db():
             nom_matiere TEXT NOT NULL,
             note_examen REAL NOT NULL,
             taux_presence REAL NOT NULL,
-            session TEXT DEFAULT 'S1'
+            session TEXT DEFAULT 'S1',
+            annee_academique TEXT
         );
+        
         CREATE TABLE IF NOT EXISTS anciens_etudiants (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             id_etudiant INTEGER REFERENCES etudiants(id_etudiant) ON DELETE CASCADE,
@@ -61,21 +90,21 @@ def init_db():
     conn.commit()
     conn.close()
 
-# Initialize DB on startup
 if not os.path.exists(DB_PATH):
     init_db()
 
 # ==========================================
-# HELPERS (REQUÊTES)
+# FONCTIONS UTILITAIRES
 # ==========================================
+@st.cache_data(ttl=3600)
 def load_data(query, params=()):
-    conn = get_db()
+    conn = get_connection()
     df = pd.read_sql_query(query, conn, params=params)
     conn.close()
     return df
 
 def execute_query(query, params=()):
-    conn = get_db()
+    conn = get_connection()
     cur = conn.cursor()
     try:
         cur.execute(query, params)
@@ -88,237 +117,169 @@ def execute_query(query, params=()):
     finally:
         conn.close()
 
+def export_dataframe(df, filename, format='csv'):
+    if format == 'csv':
+        return df.to_csv(index=False).encode('utf-8')
+    elif format == 'excel':
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df.to_excel(writer, index=False, sheet_name='data')
+        return output.getvalue()
+
 # ==========================================
-# INTERFACE UTILISATEUR (SIDEBAR)
+# SIDEBAR
 # ==========================================
+st.sidebar.image("https://img.icons8.com/color/96/graduation-cap.png", width=80)
 st.sidebar.title("🎓 UniAnalytics")
-menu = st.sidebar.radio("Navigation", [
-    "📊 Tableau de bord", 
-    "🔍 Recherche étudiant", 
-    "➕ Collecte données", 
-    "📈 Performance filières", 
-    "🗂️ Anciens étudiants"
-])
+st.sidebar.markdown("### Tableau de bord avancé")
+
+menu = st.sidebar.radio(
+    "Navigation",
+    ["📊 Tableau de bord", "🔍 Recherche", "➕ Collecte", "📈 Performances", "📉 Analyses avancées", "🗂️ Anciens", "⚙️ Export"]
+)
 
 st.sidebar.markdown("---")
-st.sidebar.caption("v1.0.0 · Streamlit Version")
+st.sidebar.caption("v2.0.0 · Dashboard interactif")
 
 # ==========================================
-# PAGES
+# PAGE : TABLEAU DE BORD (enrichi)
 # ==========================================
-
-# --- PAGE 1: TABLEAU DE BORD ---
 if menu == "📊 Tableau de bord":
-    st.title("Tableau de bord")
-    st.write("Analyse statistique complète — données en temps réel")
+    st.title("📊 Tableau de bord stratégique")
+    st.markdown("Vue d'ensemble des indicateurs clés de performance")
 
+    # Chargement
     df_etud = load_data("SELECT * FROM etudiants")
     df_res = load_data("SELECT * FROM resultats")
+    df_sess = load_data("SELECT * FROM sessions_etude")
 
     if not df_etud.empty and not df_res.empty:
-        moyenne_gen = df_res["note_examen"].mean()
+        # Indicateurs globaux
+        total_etudiants = len(df_etud)
+        moyenne_generale = df_res["note_examen"].mean()
         taux_reussite = (df_res["note_examen"] >= 10).mean() * 100
-        
-        moy_etudiant = df_res.groupby("id_etudiant")["note_examen"].mean().reset_index()
-        risque = (moy_etudiant["note_examen"] < 10).sum()
-        pct_risque = (risque / len(moy_etudiant)) * 100 if len(moy_etudiant) > 0 else 0
+        taux_abandon = len(df_sess) / total_etudiants if total_etudiants else 0
 
-        # KPIs
         col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Étudiants inscrits", len(df_etud))
-        col2.metric("Moyenne générale", f"{moyenne_gen:.2f} / 20")
-        col3.metric("Taux de réussite", f"{taux_reussite:.1f} %")
-        col4.metric("Risque d'abandon", f"{pct_risque:.1f} %")
+        col1.metric("👨‍🎓 Étudiants", total_etudiants)
+        col2.metric("📊 Moyenne", f"{moyenne_generale:.2f}/20")
+        col3.metric("✅ Taux réussite", f"{taux_reussite:.1f}%")
+        col4.metric("⚠️ Risque abandon", f"{taux_abandon:.1f}%")
 
         st.markdown("---")
         colA, colB = st.columns(2)
-        
+
+        # Distribution des notes avec Plotly
         with colA:
             st.subheader("Distribution des notes")
-            df_hist = pd.cut(df_res["note_examen"], bins=[0, 5, 10, 12, 14, 16, 18, 20]).value_counts().sort_index()
-            st.bar_chart(df_hist)
+            fig = px.histogram(df_res, x="note_examen", nbins=20, color_discrete_sequence=['#1e3c72'],
+                               labels={"note_examen": "Note /20"}, title="Histogramme des notes")
+            fig.update_layout(bargap=0.1)
+            st.plotly_chart(fig, use_container_width=True)
 
+        # Boxplot par matière
         with colB:
-            st.subheader("Performance par Filière")
-            df_merge = pd.merge(df_res, df_etud, on="id_etudiant")
-            perf_fil = df_merge.groupby("filiere")["note_examen"].mean()
-            st.bar_chart(perf_fil)
-            
+            st.subheader("Performance par matière")
+            top_matiere = df_res.groupby("nom_matiere")["note_examen"].mean().sort_values(ascending=False).head(8)
+            fig = px.bar(top_matiere, x=top_matiere.values, y=top_matiere.index, orientation='h',
+                         color=top_matiere.values, color_continuous_scale='Blues', title="Moyenne par matière")
+            fig.update_layout(yaxis={'categoryorder':'total ascending'})
+            st.plotly_chart(fig, use_container_width=True)
+
+        # Évolution temporelle (si date présente)
+        if 'date' in df_sess.columns and not df_sess.empty:
+            st.subheader("Évolution des heures d'étude")
+            df_sess['date'] = pd.to_datetime(df_sess['date'])
+            evol = df_sess.groupby(df_sess['date'].dt.date)['heures_etude'].mean().reset_index()
+            fig = px.line(evol, x='date', y='heures_etude', title="Moyenne des heures d'étude par jour",
+                          markers=True, labels={"heures_etude": "Heures"})
+            st.plotly_chart(fig, use_container_width=True)
+
+        # Radar chart de répartition par filière
+        repartition = df_etud["filiere"].value_counts().reset_index()
+        repartition.columns = ["Filière", "Effectif"]
+        fig_pie = px.pie(repartition, values="Effectif", names="Filière", title="Répartition par filière",
+                         hole=0.4, color_discrete_sequence=px.colors.sequential.Blues_r)
+        st.plotly_chart(fig_pie, use_container_width=True)
+
     else:
-        st.info("Aucune donnée suffisante pour afficher les statistiques. Veuillez ajouter des étudiants et des notes.")
+        st.warning("Données insuffisantes pour afficher le tableau de bord. Veuillez ajouter des étudiants et des notes.")
 
+# ==========================================
+# PAGE : ANALYSES AVANCÉES (NOUVEAU)
+# ==========================================
+elif menu == "📉 Analyses avancées":
+    st.title("📉 Analyses avancées")
+    st.markdown("Corrélations, heatmaps, et prédictions simplifiées")
 
-# --- PAGE 2: RECHERCHE ---
-elif menu == "🔍 Recherche étudiant":
-    st.title("Recherche d'étudiant")
-    
-    search_term = st.text_input("Rechercher par nom, prénom ou matricule (ex: CM0001)...")
-    
-    query = "SELECT * FROM etudiants"
-    df = load_data(query)
-    
-    if not df.empty:
-        if search_term:
-            df = df[df.apply(lambda row: row.astype(str).str.contains(search_term, case=False).any(), axis=1)]
-        
-        st.write(f"**{len(df)}** étudiant(s) trouvé(s)")
-        st.dataframe(df, use_container_width=True)
+    df_etud = load_data("SELECT * FROM etudiants")
+    df_res = load_data("SELECT * FROM resultats")
+    df_sess = load_data("SELECT * FROM sessions_etude")
+
+    if not df_res.empty:
+        # Matrice de corrélation entre présence, note, heures d'étude
+        merged = pd.merge(df_res, df_sess, on="id_etudiant", how="inner")
+        if not merged.empty:
+            corr_data = merged[["note_examen", "taux_presence", "heures_etude", "heures_sommeil", "humeur_index"]].corr()
+            fig = px.imshow(corr_data, text_auto=True, aspect="auto", color_continuous_scale='RdBu',
+                            title="Matrice de corrélation")
+            st.plotly_chart(fig, use_container_width=True)
+
+        # Nuage de points note vs présence
+        st.subheader("Relation : Note exam vs Taux de présence")
+        fig = px.scatter(merged, x="taux_presence", y="note_examen", color="humeur_index",
+                         size="heures_etude", hover_data=["code_matiere"],
+                         labels={"taux_presence": "Présence (%)", "note_examen": "Note /20"})
+        st.plotly_chart(fig, use_container_width=True)
+
+        # Heatmap des notes par filière et niveau
+        df_merged = pd.merge(df_res, df_etud, on="id_etudiant")
+        pivot = df_merged.pivot_table(index="filiere", columns="niveau", values="note_examen", aggfunc="mean")
+        fig = px.imshow(pivot, text_auto=True, aspect="auto", color_continuous_scale='Viridis',
+                        title="Moyennes (filière × niveau)")
+        st.plotly_chart(fig, use_container_width=True)
     else:
-        st.info("La base de données est vide.")
+        st.info("Ajoutez des résultats pour voir les analyses avancées.")
 
-
-# --- PAGE 3: COLLECTE ---
-elif menu == "➕ Collecte données":
-    st.title("Collecte de données")
-    
-    tab1, tab2, tab3, tab4 = st.tabs(["👤 Nouvel étudiant", "📖 Session d'étude", "📝 Résultat examen", "🎓 Ancien étudiant"])
-    
-    # 1. Ajouter un étudiant
-    with tab1:
-        st.subheader("Enregistrer un nouvel étudiant")
-        with st.form("form_etudiant", clear_on_submit=True):
-            col1, col2 = st.columns(2)
-            nom = col1.text_input("Nom")
-            prenom = col2.text_input("Prénom")
-            sexe = col1.selectbox("Sexe", ["M", "F"])
-            filiere = col2.selectbox("Filière", ["Informatique", "Mathématiques", "Physique", "Économie", "Droit"])
-            niveau = col1.selectbox("Niveau", ["L1", "L2", "L3", "M1", "M2"])
-            age = col2.number_input("Âge", min_value=17, max_value=60, value=20)
-            annee = st.number_input("Année d'inscription", min_value=2000, max_value=2050, value=datetime.now().year)
-            
-            if st.form_submit_button("Enregistrer l'étudiant"):
-                df_ids = load_data("SELECT MAX(id_etudiant) as max_id FROM etudiants")
-                new_id = (df_ids["max_id"][0] or 0) + 1
-                matricule = f"CM{new_id:04d}"
-                
-                success, msg = execute_query(
-                    "INSERT INTO etudiants (matricule, nom, prenom, sexe, filiere, niveau, age, annee_inscription) VALUES (?,?,?,?,?,?,?,?)",
-                    (matricule, nom, prenom, sexe, filiere, niveau, age, annee)
-                )
-                if success:
-                    st.success(f"Étudiant {prenom} {nom} enregistré avec le matricule {matricule}")
-                else:
-                    st.error(f"Erreur : {msg}")
-
-    # Récupérer la liste pour les selectbox
-    df_etudiants = load_data("SELECT id_etudiant, matricule, nom, prenom FROM etudiants")
-    etudiants_dict = {f"{row['matricule']} - {row['prenom']} {row['nom']}": row['id_etudiant'] for _, row in df_etudiants.iterrows()}
-    
-    # 2. Session d'étude
-    with tab2:
-        st.subheader("Enregistrer une session d'étude")
-        if not etudiants_dict:
-            st.warning("Ajoutez d'abord un étudiant.")
-        else:
-            with st.form("form_session", clear_on_submit=True):
-                etud_sel = st.selectbox("Étudiant", list(etudiants_dict.keys()))
-                date_sess = st.date_input("Date")
-                heures = st.number_input("Heures d'étude", min_value=0.0, max_value=24.0, step=0.5)
-                sommeil = st.number_input("Heures de sommeil", min_value=0.0, max_value=24.0, step=0.5, value=7.0)
-                humeur = st.slider("Humeur (1=Mauvais, 5=Excellent)", 1, 5, 3)
-                
-                if st.form_submit_button("Enregistrer la session"):
-                    id_etud = etudiants_dict[etud_sel]
-                    success, msg = execute_query(
-                        "INSERT INTO sessions_etude (id_etudiant, date, heures_etude, heures_sommeil, humeur_index) VALUES (?,?,?,?,?)",
-                        (id_etud, date_sess, heures, sommeil, humeur)
-                    )
-                    if success:
-                        st.success("Session enregistrée !")
-                    else:
-                        st.error(msg)
-
-    # 3. Résultat
-    with tab3:
-        st.subheader("Enregistrer un résultat")
-        if not etudiants_dict:
-            st.warning("Ajoutez d'abord un étudiant.")
-        else:
-            with st.form("form_resultat", clear_on_submit=True):
-                etud_sel_r = st.selectbox("Étudiant concerné", list(etudiants_dict.keys()))
-                code = st.text_input("Code Matière (ex: INF101)")
-                nom_mat = st.text_input("Nom de la matière")
-                note = st.number_input("Note / 20", min_value=0.0, max_value=20.0, step=0.25)
-                presence = st.number_input("Taux de présence (%)", min_value=0, max_value=100, value=100)
-                
-                if st.form_submit_button("Enregistrer la note"):
-                    id_etud_r = etudiants_dict[etud_sel_r]
-                    success, msg = execute_query(
-                        "INSERT INTO resultats (id_etudiant, code_matiere, nom_matiere, note_examen, taux_presence) VALUES (?,?,?,?,?)",
-                        (id_etud_r, code, nom_mat, note, presence)
-                    )
-                    if success:
-                        st.success("Note enregistrée !")
-                    else:
-                        st.error(msg)
-
-    # 4. Ancien étudiant
-    with tab4:
-        st.subheader("Archiver un départ")
-        if not etudiants_dict:
-            st.warning("Ajoutez d'abord un étudiant.")
-        else:
-            with st.form("form_ancien", clear_on_submit=True):
-                etud_sel_a = st.selectbox("Sélectionner l'étudiant à archiver", list(etudiants_dict.keys()))
-                cause = st.selectbox("Cause", ["fin_parcours", "abandon", "echec_scolaire"])
-                annee_d = st.number_input("Année de départ", min_value=2000, max_value=2050, value=datetime.now().year)
-                commentaire = st.text_area("Commentaire")
-                
-                if st.form_submit_button("Archiver"):
-                    id_etud_a = etudiants_dict[etud_sel_a]
-                    success, msg = execute_query(
-                        "INSERT INTO anciens_etudiants (id_etudiant, cause, annee_depart, commentaire) VALUES (?,?,?,?)",
-                        (id_etud_a, cause, annee_d, commentaire)
-                    )
-                    if success:
-                        st.success("Étudiant archivé avec succès.")
-                    else:
-                        st.error(msg)
-
-
-# --- PAGE 4: PERFORMANCE ---
-elif menu == "📈 Performance filières":
-    st.title("Performance par filière")
-    
+# ==========================================
+# PAGE : PERFORMANCES (améliorée)
+# ==========================================
+elif menu == "📈 Performances":
+    st.title("📈 Performance détaillée par filière")
     df = load_data("""
-        SELECT e.filiere, 
+        SELECT e.filiere, e.niveau,
                COUNT(DISTINCT e.id_etudiant) as nb_etudiants,
-               AVG(r.note_examen) as moyenne,
-               MAX(r.note_examen) as note_max,
-               MIN(r.note_examen) as note_min
+               ROUND(AVG(r.note_examen),2) as moyenne,
+               ROUND(MAX(r.note_examen),2) as max_note,
+               ROUND(MIN(r.note_examen),2) as min_note,
+               ROUND((SUM(CASE WHEN r.note_examen >= 10 THEN 1 ELSE 0 END) * 100.0 / COUNT(r.note_examen)),1) as taux_reussite
         FROM etudiants e
         JOIN resultats r ON e.id_etudiant = r.id_etudiant
-        GROUP BY e.filiere
+        GROUP BY e.filiere, e.niveau
         ORDER BY moyenne DESC
     """)
-    
     if not df.empty:
-        st.dataframe(df.style.highlight_max(subset=['moyenne'], color='lightgreen'), use_container_width=True)
-        
-        st.subheader("Moyenne Générale par Filière")
-        st.bar_chart(df.set_index("filiere")["moyenne"])
+        st.dataframe(df.style.background_gradient(subset=["moyenne"], cmap="Blues"), use_container_width=True)
+        fig = px.bar(df, x="filiere", y="moyenne", color="niveau", barmode="group",
+                     title="Moyenne par filière et niveau", labels={"moyenne": "Note moyenne"})
+        st.plotly_chart(fig, use_container_width=True)
     else:
-        st.info("Ajoutez des étudiants et des notes pour voir les performances.")
+        st.info("Aucune donnée de performance disponible.")
 
-
-# --- PAGE 5: ANCIENS ÉTUDIANTS ---
-elif menu == "🗂️ Anciens étudiants":
-    st.title("Anciens étudiants")
-    
-    df_anciens = load_data("""
-        SELECT ae.id, e.matricule, e.nom, e.prenom, e.filiere, ae.cause, ae.annee_depart, ae.commentaire
-        FROM anciens_etudiants ae
-        JOIN etudiants e ON ae.id_etudiant = e.id_etudiant
-    """)
-    
-    if not df_anciens.empty:
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Total Anciens", len(df_anciens))
-        col2.metric("Diplômés", len(df_anciens[df_anciens['cause'] == 'fin_parcours']))
-        col3.metric("Abandons", len(df_anciens[df_anciens['cause'] == 'abandon']))
-        col4.metric("Échecs", len(df_anciens[df_anciens['cause'] == 'echec_scolaire']))
-        
-        st.markdown("---")
-        st.dataframe(df_anciens, use_container_width=True)
+# ==========================================
+# PAGE : EXPORT (NOUVEAU)
+# ==========================================
+elif menu == "⚙️ Export":
+    st.title("📀 Export de données")
+    tables = ["etudiants", "resultats", "sessions_etude", "anciens_etudiants"]
+    selected = st.selectbox("Choisir une table", tables)
+    df = load_data(f"SELECT * FROM {selected}")
+    if not df.empty:
+        format_export = st.radio("Format", ["csv", "excel"])
+        if st.button("Télécharger"):
+            data = export_dataframe(df, f"{selected}.{format_export}", format_export)
+            st.download_button(label="📥 Cliquer pour télécharger", data=data,
+                               file_name=f"{selected}_{datetime.now().strftime('%Y%m%d')}.{format_export}",
+                               mime="application/octet-stream")
     else:
-        st.info("Aucun ancien étudiant enregistré.")
+        st.warning("Table vide.")
