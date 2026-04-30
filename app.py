@@ -1,5 +1,5 @@
 # ==========================================
-# app.py - UniAnalytics Pro (version stable)
+# app.py - UniAnalytics 
 # ==========================================
 import streamlit as st
 import sqlite3
@@ -13,7 +13,7 @@ import random
 from faker import Faker
 
 # ==========================================
-# CONFIGURATION DE LA PAGE
+# CONFIGURATION
 # ==========================================
 st.set_page_config(
     page_title="UniAnalytics Pro",
@@ -22,7 +22,6 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Style CSS léger
 st.markdown("""
     <style>
     .main { background-color: #f8f9fa; }
@@ -30,11 +29,11 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# ==========================================
-# BASE DE DONNÉES (dans /tmp pour Streamlit Cloud)
-# ==========================================
 DB_PATH = "/tmp/unianalytics_pro.db"
 
+# ==========================================
+# BASE DE DONNÉES
+# ==========================================
 def get_connection():
     return sqlite3.connect(DB_PATH)
 
@@ -84,7 +83,7 @@ def init_db():
     conn.close()
 
 # ==========================================
-# FONCTIONS UTILITAIRES
+# FONCTIONS SQL
 # ==========================================
 @st.cache_data(ttl=3600)
 def load_data(query, params=()):
@@ -112,68 +111,65 @@ def execute_query(query, params=()):
         conn.close()
 
 # ==========================================
-# PEUPLEMENT AUTOMATIQUE SI BASE VIDE
+# PEUPLEMENT AUTOMATIQUE (25 étudiants)
 # ==========================================
 def seed_database_if_empty():
     df = load_data("SELECT COUNT(*) as nb FROM etudiants")
-    if df.iloc[0]['nb'] == 0:
+    if df.empty or df.iloc[0]['nb'] == 0:
         with st.spinner("Génération de 25 étudiants fictifs..."):
-            fake = Faker('fr_FR')
-            filieres = ["Informatique", "Mathématiques", "Physique", "Économie", "Droit"]
-            niveaux = ["L1", "L2", "L3", "M1", "M2"]
-            
-            # Création des étudiants
-            for i in range(25):
-                matricule = f"CM{2024}{i+1:03d}"
-                nom = fake.last_name()
-                prenom = fake.first_name()
-                sexe = random.choice(["M", "F"])
-                filiere = random.choice(filieres)
-                niveau = random.choice(niveaux)
-                age = random.randint(18, 30)
-                annee = random.randint(2018, 2025)
-                execute_query(
-                    "INSERT INTO etudiants (matricule, nom, prenom, sexe, filiere, niveau, age, annee_inscription) VALUES (?,?,?,?,?,?,?,?)",
-                    (matricule, nom, prenom, sexe, filiere, niveau, age, annee)
-                )
-            
-            # Récupérer les IDs
-            df_ids = load_data("SELECT id_etudiant FROM etudiants")
-            ids = df_ids['id_etudiant'].tolist()
-            
-            # Ajouter des sessions et résultats pour chaque étudiant
-            for _ in range(120):
-                id_etud = random.choice(ids)
-                date = fake.date_between(start_date='-2y', end_date='today')
-                heures_etude = round(random.uniform(0.5, 10), 1)
-                heures_sommeil = round(random.uniform(4, 10), 1)
-                humeur = random.randint(1, 5)
+            try:
+                fake = Faker('fr_FR')
+                filieres = ["Informatique", "Mathématiques", "Physique", "Économie", "Droit"]
+                niveaux = ["L1", "L2", "L3", "M1", "M2"]
                 
-                execute_query(
-                    "INSERT INTO sessions_etude (id_etudiant, date, heures_etude, heures_sommeil, humeur_index) VALUES (?,?,?,?,?)",
-                    (id_etud, date, heures_etude, heures_sommeil, humeur)
-                )
+                # Étudiants
+                for i in range(25):
+                    matricule = f"CM{2024}{i+1:03d}"
+                    nom = fake.last_name()
+                    prenom = fake.first_name()
+                    sexe = random.choice(["M", "F"])
+                    filiere = random.choice(filieres)
+                    niveau = random.choice(niveaux)
+                    age = random.randint(18, 30)
+                    annee = random.randint(2018, 2025)
+                    execute_query(
+                        "INSERT INTO etudiants (matricule, nom, prenom, sexe, filiere, niveau, age, annee_inscription) VALUES (?,?,?,?,?,?,?,?)",
+                        (matricule, nom, prenom, sexe, filiere, niveau, age, annee)
+                    )
                 
-                code = fake.bothify(text='??-###', letters='ABCDEFGHIJKLMNOPQRSTUVWXYZ')
-                nom_matiere = fake.word().capitalize()
-                note = round(random.uniform(5, 18), 2)
-                presence = random.randint(50, 100)
-                session = f"S{random.randint(1, 6)}"
-                annee_acad = f"{random.randint(2020,2025)}-{random.randint(2021,2026)}"
-                
-                execute_query(
-                    "INSERT INTO resultats (id_etudiant, code_matiere, nom_matiere, note_examen, taux_presence, session, annee_academique) VALUES (?,?,?,?,?,?,?)",
-                    (id_etud, code, nom_matiere, note, presence, session, annee_acad)
-                )
-            st.success("✅ 25 étudiants fictifs ajoutés avec succès !")
-            st.rerun()
+                # Sessions et résultats
+                df_ids = load_data("SELECT id_etudiant FROM etudiants")
+                ids = df_ids['id_etudiant'].tolist()
+                for _ in range(120):
+                    id_etud = random.choice(ids)
+                    date = fake.date_between(start_date='-2y', end_date='today')
+                    heures_etude = round(random.uniform(0.5, 10), 1)
+                    heures_sommeil = round(random.uniform(4, 10), 1)
+                    humeur = random.randint(1, 5)
+                    execute_query(
+                        "INSERT INTO sessions_etude (id_etudiant, date, heures_etude, heures_sommeil, humeur_index) VALUES (?,?,?,?,?)",
+                        (id_etud, date, heures_etude, heures_sommeil, humeur)
+                    )
+                    code = fake.bothify(text='??-###', letters='ABCDEFGHIJKLMNOPQRSTUVWXYZ')
+                    nom_matiere = fake.word().capitalize()
+                    note = round(random.uniform(5, 18), 2)
+                    presence = random.randint(50, 100)
+                    session = f"S{random.randint(1, 6)}"
+                    annee_acad = f"{random.randint(2020,2025)}-{random.randint(2021,2026)}"
+                    execute_query(
+                        "INSERT INTO resultats (id_etudiant, code_matiere, nom_matiere, note_examen, taux_presence, session, annee_academique) VALUES (?,?,?,?,?,?,?)",
+                        (id_etud, code, nom_matiere, note, presence, session, annee_acad)
+                    )
+                st.success("✅ 25 étudiants fictifs ajoutés avec succès !")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Erreur lors du peuplement : {e}")
 
 # ==========================================
 # INITIALISATION
 # ==========================================
 if not os.path.exists(DB_PATH):
     init_db()
-# Peuplement si vide
 seed_database_if_empty()
 
 # ==========================================
@@ -207,12 +203,12 @@ if menu == "📊 Tableau de bord":
         colA, colB = st.columns(2)
         with colA:
             fig = px.histogram(df_res, x="note_examen", nbins=20, title="Distribution des notes")
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
         with colB:
             top_fil = df_etud['filiere'].value_counts().reset_index()
             top_fil.columns = ['Filière', 'Effectif']
             fig = px.pie(top_fil, values='Effectif', names='Filière', title="Répartition par filière")
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
     else:
         st.info("Aucune donnée disponible. Commencez par ajouter des étudiants via l'onglet 'Collecte'.")
 
@@ -227,23 +223,21 @@ elif menu == "🔍 Recherche":
         if search:
             mask = df.apply(lambda row: row.astype(str).str.contains(search, case=False).any(), axis=1)
             df = df[mask]
-        st.dataframe(df, use_container_width=True)
+        st.dataframe(df, width='stretch')
     else:
         st.warning("Aucun étudiant en base.")
 
 # ==========================================
-# PAGE 3 : COLLECTE DE DONNÉES
+# PAGE 3 : COLLECTE
 # ==========================================
 elif menu == "➕ Collecte":
     st.title("➕ Collecte de données")
-    
     df_etud = load_data("SELECT id_etudiant, matricule, nom, prenom FROM etudiants")
     if df_etud.empty:
         st.warning("⚠️ Aucun étudiant enregistré. Commencez par en ajouter un ci-dessous.")
     
     tab1, tab2, tab3 = st.tabs(["👤 Nouvel étudiant", "📖 Session d'étude", "📝 Résultat examen"])
     
-    # Onglet 1 : Ajouter étudiant
     with tab1:
         with st.form("form_etudiant", clear_on_submit=True):
             col1, col2 = st.columns(2)
@@ -271,7 +265,6 @@ elif menu == "➕ Collecte":
     if not df_etud.empty:
         etud_dict = {f"{row['matricule']} - {row['prenom']} {row['nom']}": row['id_etudiant'] for _, row in df_etud.iterrows()}
         
-        # Onglet 2 : Session d'étude
         with tab2:
             with st.form("form_session", clear_on_submit=True):
                 etud = st.selectbox("Étudiant", list(etud_dict.keys()))
@@ -290,7 +283,6 @@ elif menu == "➕ Collecte":
                     else:
                         st.error(msg)
         
-        # Onglet 3 : Résultat examen
         with tab3:
             with st.form("form_resultat", clear_on_submit=True):
                 etud_r = st.selectbox("Étudiant", list(etud_dict.keys()), key="r")
@@ -327,9 +319,9 @@ elif menu == "📈 Performances":
         ORDER BY moyenne DESC
     """)
     if not df.empty:
-        st.dataframe(df, use_container_width=True)
+        st.dataframe(df, width='stretch')
         fig = px.bar(df, x="filiere", y="moyenne", color="taux_reussite", title="Moyenne par filière")
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
     else:
         st.info("Aucune performance à afficher.")
 
@@ -345,16 +337,16 @@ elif menu == "📉 Analyses avancées":
         if not merged.empty:
             corr = merged[["note_examen", "taux_presence", "heures_etude", "heures_sommeil", "humeur_index"]].corr()
             fig = px.imshow(corr, text_auto=True, aspect="auto", title="Matrice de corrélation")
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
             
             fig2 = px.scatter(merged, x="taux_presence", y="note_examen", color="humeur_index", size="heures_etude",
                               title="Note vs présence (taille = heures d'étude)")
-            st.plotly_chart(fig2, use_container_width=True)
+            st.plotly_chart(fig2, width='stretch')
     else:
         st.info("Données insuffisantes pour les analyses avancées.")
 
 # ==========================================
-# PAGE 6 : ANCIENS ÉTUDIANTS
+# PAGE 6 : ANCIENS
 # ==========================================
 elif menu == "🗂️ Anciens":
     st.title("🗂️ Anciens étudiants")
@@ -364,6 +356,6 @@ elif menu == "🗂️ Anciens":
         JOIN etudiants e ON ae.id_etudiant = e.id_etudiant
     """)
     if not df_anciens.empty:
-        st.dataframe(df_anciens, use_container_width=True)
+        st.dataframe(df_anciens, width='stretch')
     else:
         st.info("Aucun ancien étudiant enregistré.")
